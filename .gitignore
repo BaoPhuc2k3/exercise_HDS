@@ -1,0 +1,23 @@
+# Giữ tài liệu Markdown trên máy, không đưa lên repository.
+*.md
+
+# Frontend: dependencies và sản phẩm build.
+**/node_modules/
+**/dist/
+
+# Backend: sản phẩm build và cấu hình IDE cá nhân.
+**/bin/
+**/obj/
+**/.vs/
+*.user
+*.suo
+
+# File cấu hình riêng và dữ liệu chẩn đoán trên máy.
+.diagnostics/
+.env
+.env.*
+!.env.example
+**/secrets.json
+*.pfx
+*.pem
+*.key
