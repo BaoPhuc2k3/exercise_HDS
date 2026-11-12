@@ -64,7 +64,7 @@ function ProductTable({ products = [], startIndex = 0, emptyMessage = "Chưa có
           ) : (
             products.map((product, index) => (
               <TableRow key={product.id ?? index} hover>
-              <TableCell align="center">{startIndex + index + 1}</TableCell>
+                <TableCell align="center">{startIndex + index + 1}</TableCell>
                 <TableCell align="center">
                   <Tooltip title="Chỉnh sửa">
                     <IconButton
@@ -83,10 +83,10 @@ function ProductTable({ products = [], startIndex = 0, emptyMessage = "Chưa có
                     </IconButton>
                   </Tooltip>
                 </TableCell>
-                <TableCell>{product.productCode}</TableCell>
-                <TableCell>{product.productName}</TableCell>
+                <TableCell align="center">{product.productCode}</TableCell>
+                <TableCell align="center">{product.productName}</TableCell>
                 <TableCell align="center">{product.unit}</TableCell>
-                <TableCell>{product.specification}</TableCell>
+                <TableCell align="center">{product.specification}</TableCell>
                 <TableCell align="center">
                   {product.quantityPerBox}
                 </TableCell>

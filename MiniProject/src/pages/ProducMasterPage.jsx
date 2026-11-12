@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {useState, useEffect } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import {
+  fetchProducts,
+  setProductSearchField,
+  setProductKeyword,
+  applyProductSearch,
+  resetProductSearch,
+  setProductPage,
+  setProductPageSize,
+} from "../features/products/productsSlice";
 import { Alert, Box, Button, Container, Typography } from "@mui/material";
 import ProductHeader from "../components/ProductMaster/ProductHeader";
 import ProductPagination from "../components/common/ListPagination";
@@ -6,68 +16,41 @@ import ProductTable from "../components/ProductMaster/ProductTable";
 import ProductUploadDialog from "../components/ProductMaster/ProductUploadDialog";
 import ProductFormDialog from "../components/ProductMaster/ProductFormDialog";
 import { confirmDeleteProduct, showError, showSuccess } from "../utils/productAlerts";
-import { getProducts, createProduct, updateProduct, deleteProduct, downloadProductTemplate, importProducts } from "../api/productsApi";
+import { createProduct, updateProduct, deleteProduct, downloadProductTemplate, importProducts } from "../api/productsApi";
 
 function ProductMaster() {
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [searchField, setSearchField] = useState("productCode");
-  const [keyword, setKeyword] = useState("");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
-  const [appliedSearch, setAppliedSearch] = useState({ searchField: "productCode", keyword: "" });
   const [createOpen, setCreateOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [selectedUploadFile, setSelectedUploadFile] = useState(null);
   const [editingProduct, setEditingProduct] = useState(null);
-  // const [deletingProduct, setDeletingProduct] = useState(null);
-  const activeRequest = useRef(null);
 
-  const loadProducts = useCallback(async ({ searchField, keyword }) => {
-    activeRequest.current?.abort();
-    const controller = new AbortController();
-    activeRequest.current = controller;
-    setLoading(true);
-    setError("");
+  const dispatch = useDispatch();
 
-    try {
-      const data = await getProducts({ searchField, keyword, signal: controller.signal });
-      if (controller.signal.aborted) return;
-      setProducts(data);
-      setPage(1);
-    } catch (requestError) {
-      if (controller.signal.aborted) return;
-      setProducts([]);
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Không thể tải dữ liệu sản phẩm.",
-      );
-    } finally {
-      if (!controller.signal.aborted) setLoading(false);
-    }
-  }, []);
+  const {
+    items: products,
+    status,
+    error,
+    draftSearch,
+    appliedSearch,
+    page,
+    pageSize,
+  } = useSelector((state) => state.products);
+
+  const { searchField, keyword } = draftSearch;
+  const loading = status === "idle" || status === "loading";
 
   useEffect(() => {
-    let isActive = true;
-
-    // Hoãn tải tới microtask; cleanup có thể hủy lần chạy effect trước khi request bắt đầu.
-    queueMicrotask(() => {
-      if (isActive) loadProducts({ searchField: "productCode", keyword: "" });
-    });
+    const request = dispatch(fetchProducts(appliedSearch));
 
     return () => {
-      isActive = false;
-      activeRequest.current?.abort();
+      request.abort();
     };
-  }, [loadProducts]);
+  }, [dispatch, appliedSearch]);
 
   const handleSearch = () => {
-    const criteria = { searchField, keyword: keyword.trim() };
-    setAppliedSearch(criteria);
-    loadProducts(criteria);
+    dispatch(applyProductSearch());
   };
+
 
   const startIndex = (page - 1) * pageSize;
   const currentProducts = products.slice(
@@ -76,8 +59,7 @@ function ProductMaster() {
   );
 
   const handlePageSizeChange = (newPageSize) => {
-    setPageSize(newPageSize);
-    setPage(1);
+    dispatch(setProductPageSize(newPageSize));
   };
 
   const handleAdd = () => {
@@ -88,16 +70,7 @@ function ProductMaster() {
     await createProduct(product);
 
     setCreateOpen(false);
-    setSearchField("productCode");
-    setKeyword("");
-
-    const noFilter = {
-      searchField: "productCode",
-      keyword: "",
-    };
-
-    setAppliedSearch(noFilter);
-    await loadProducts(noFilter);
+    dispatch(resetProductSearch());
     showSuccess("Đã thêm sản phẩm.");
   };
 
@@ -132,16 +105,7 @@ function ProductMaster() {
     const result = await importProducts(file);
 
     handleCloseUpload();
-    setSearchField("productCode");
-    setKeyword("");
-
-    const noFilter = {
-      searchField: "productCode",
-      keyword: "",
-    };
-
-    setAppliedSearch(noFilter);
-    await loadProducts(noFilter);
+    dispatch(resetProductSearch());
     showSuccess(`Đã tải lên ${result.importedCount} sản phẩm.`);
   };
 
@@ -155,16 +119,7 @@ function ProductMaster() {
     await updateProduct(editingProduct.id, changes);
 
     setEditingProduct(null);
-    setSearchField("productCode");
-    setKeyword("");
-
-    const noFilter = {
-      searchField: "productCode",
-      keyword: "",
-    };
-
-    setAppliedSearch(noFilter);
-    await loadProducts(noFilter);
+    dispatch(resetProductSearch());
     showSuccess("Đã cập nhật sản phẩm.");
   };
 
@@ -174,13 +129,15 @@ function ProductMaster() {
     );
 
     if (!confirmed) return;
-
-    await loadProducts(appliedSearch);
+    dispatch(setProductPage(1));
+    dispatch(resetProductSearch());
     showSuccess("Đã xóa sản phẩm.");
   };
 
   return (
-    <Container maxWidth={false} sx={{ mt: 2, pb: 4, px: { xs: 2, sm: 3, lg: 4 } }}>
+    <Container
+      maxWidth={false}
+      sx={{ mt: 2, pb: 4, px: { xs: 2, sm: 3, lg: 4 } }}>
       <Box
         sx={{
           width: "100%",
@@ -188,8 +145,10 @@ function ProductMaster() {
         <ProductHeader
           searchField={searchField}
           keyword={keyword}
-          onSearchFieldChange={setSearchField}
-          onKeywordChange={setKeyword}
+          onSearchFieldChange={(value) =>
+            dispatch(setProductSearchField(value))
+          }
+          onKeywordChange={(value) => dispatch(setProductKeyword(value))}
           onSearch={handleSearch}
           onAdd={handleAdd}
           onDownloadTemplate={handleDownloadTemplate}
@@ -209,7 +168,7 @@ function ProductMaster() {
               <Button
                 color="inherit"
                 size="small"
-                onClick={() => loadProducts(appliedSearch)}>
+                onClick={() => dispatch(fetchProducts(appliedSearch))}>
                 Thử lại
               </Button>
             }
@@ -245,7 +204,7 @@ function ProductMaster() {
               page={page}
               pageSize={pageSize}
               totalItems={products.length}
-              onPageChange={setPage}
+              onPageChange={(newPage) => dispatch(setProductPage(newPage))}
               showPageSize={false}
               showPager
             />

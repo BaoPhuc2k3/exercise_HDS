@@ -1,4 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {  useEffect, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import {
+  fetchSaleOuts,
+  setSaleOutSearchField,
+  setSaleOutKeyword,
+  setSaleOutFromDate,
+  setSaleOutToDate,
+  applySaleOutSearch,
+  resetSaleOutSearch,
+  showCreatedSaleOut,
+  setSaleOutPage,
+  setSaleOutPageSize,
+  replaceSaleOut,
+  removeSaleOut,
+} from "../features/saleOut/saleOutSlice";
 import { Alert, Box, Button, Container, Typography } from "@mui/material";
 import SaleOutHeader from "../components/SaleOut/SaleOutHeader";
 import SaleOutPagination from "../components/SaleOut/SaleOutPagination";
@@ -14,27 +29,14 @@ import {
   importSaleOuts,
   downloadSaleOutTemplate,
   downloadRevenueReport,
-  getSaleOuts,
   updateSaleOut,
   downloadSaleOutPdf,
 } from "../api/saleOutApi";
 import { confirmDeleteSaleOut } from "../utils/saleOutAlerts";
 
 
-const initialSearch = { searchField: "customerPoNo", keyword: "" };
-
 function SaleOutPage() {
-  const [saleOuts, setSaleOuts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [validationError, setValidationError] = useState("");
-
-  const [searchField, setSearchField] = useState("customerPoNo");
-  const [keyword, setKeyword] = useState("");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
-  // Giữ bộ lọc đã bấm Tìm kiếm để các thao tác khác không dùng giá trị đang nhập dở.
-  const [appliedSearch, setAppliedSearch] = useState(initialSearch);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editingSaleOut, setEditingSaleOut] = useState(null);
@@ -46,59 +48,29 @@ function SaleOutPage() {
   const [printOpen, setPrintOpen] = useState(false);
   const [revenueReportOpen, setRevenueReportOpen] = useState(false);
 
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
-  const activeRequest = useRef(null);
+  const dispatch = useDispatch();
 
-  const loadSaleOuts = useCallback(async (criteria) => {
-    // Hủy lần tải trước để kết quả cũ không ghi đè bộ lọc vừa chọn.
-    activeRequest.current?.abort();
+  const {
+    items: saleOuts,
+    status,
+    error,
+    draftSearch,
+    appliedSearch,
+    page,
+    pageSize,
+  } = useSelector((state) => state.saleOut);
 
-    const controller = new AbortController();
-    activeRequest.current = controller;
+  const { searchField, keyword, fromDate, toDate } = draftSearch;
+  const loading = status === "idle" || status === "loading";
 
-    setLoading(true);
-    setError("");
-
-    try {
-      const data = await getSaleOuts({
-        ...criteria,
-        signal: controller.signal,
-      });
-
-      if (controller.signal.aborted) return;
-
-      setSaleOuts(data);
-      setPage(1);
-    } catch (requestError) {
-      if (controller.signal.aborted) return;
-
-      setSaleOuts([]);
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Không thể tải dữ liệu Sale Out.",
-      );
-    } finally {
-      if (!controller.signal.aborted) {
-        setLoading(false);
-      }
-    }
-  }, []);
 
   useEffect(() => {
-    let active = true;
-
-    // Hoãn tải tới microtask; cleanup có thể hủy lần chạy effect trước khi request bắt đầu.
-    queueMicrotask(() => {
-      if (active) loadSaleOuts(initialSearch);
-    });
+    const request = dispatch(fetchSaleOuts(appliedSearch));
 
     return () => {
-      active = false;
-      activeRequest.current?.abort();
+      request.abort();
     };
-  }, [loadSaleOuts]);
+  }, [dispatch, appliedSearch]);
 
   const handleSearch = () => {
     if (
@@ -110,31 +82,15 @@ function SaleOutPage() {
       setValidationError("Từ ngày không được lớn hơn Đến ngày.");
       return;
     }
-
     setValidationError("");
-
-    const criteria =
-      searchField === "orderDate"
-        ? {
-            searchField,
-            fromDate: fromDate.replaceAll("-", ""),
-            toDate: toDate.replaceAll("-", ""),
-          }
-        : {
-            searchField,
-            keyword: keyword.trim(),
-          };
-
-    setAppliedSearch(criteria);
-    loadSaleOuts(criteria);
+    dispatch(applySaleOutSearch());
   };
 
   const startIndex = (page - 1) * pageSize;
   const currentSaleOuts = saleOuts.slice(startIndex, startIndex + pageSize);
 
   const handlePageSizeChange = (newPageSize) => {
-    setPageSize(newPageSize);
-    setPage(1);
+    dispatch(setSaleOutPageSize(newPageSize));
   };
 
   const hasAppliedFilter = Boolean(
@@ -147,24 +103,14 @@ function SaleOutPage() {
 
     setCreateOpen(false);
     setSuccessMessage(`Đã tạo phiếu ${result.saleOutNo}.`);
-
-    const criteria = {
-      searchField: "saleOutNo",
-      keyword: result.saleOutNo,
-    };
-
-    setSearchField("saleOutNo");
-    setKeyword(result.saleOutNo);
-    setAppliedSearch(criteria);
-
-    await loadSaleOuts(criteria);
+    dispatch(showCreatedSaleOut(result.saleOutNo));
   };
 
   const handleUpdateSaleOut = async (payload) => {
     if (!editingSaleOut) return;
 
     const updated = await updateSaleOut(editingSaleOut.id, payload);
-    setSaleOuts((current) => current.map((row) => row.id === updated.id ? updated : row));
+    dispatch(replaceSaleOut(updated));
     setEditingSaleOut(null);
     setSuccessMessage(`Đã cập nhật sản phẩm ${updated.productCode} trong phiếu ${updated.saleOutNo}.`);
   };
@@ -172,10 +118,7 @@ function SaleOutPage() {
   const handleDeleteSaleOut = async (row) => {
     const confirmed = await confirmDeleteSaleOut(row, () => deleteSaleOut(row.id));
     if (!confirmed) return;
-
-    const remainingCount = saleOuts.filter((item) => item.id !== row.id).length;
-    setSaleOuts((current) => current.filter((item) => item.id !== row.id));
-    setPage((currentPage) => Math.min(currentPage, Math.max(1, Math.ceil(remainingCount / pageSize))));
+    dispatch(removeSaleOut(row.id));
     setSuccessMessage(`Đã xóa sản phẩm ${row.productCode} khỏi phiếu ${row.saleOutNo}.`);
   };
 
@@ -222,14 +165,7 @@ function SaleOutPage() {
 
     // Hiển thị toàn bộ danh sách để người dùng thấy
     // cả các PO vừa nhập, kể cả file có nhiều PO.
-    setSearchField("customerPoNo");
-    setKeyword("");
-    setFromDate("");
-    setToDate("");
-    setAppliedSearch(initialSearch);
-
-    await loadSaleOuts(initialSearch);
-
+    dispatch(resetSaleOutSearch());
     setSuccessMessage(
       `Đã tải lên ${result.importedCount} dòng trong ${result.voucherCount} phiếu Xuất hàng.`,
     );
@@ -283,10 +219,12 @@ function SaleOutPage() {
           onOpenUpload={handleOpenUpload}
           onOpenPrint={() => setPrintOpen(true)}
           onOpenRevenueReport={() => setRevenueReportOpen(true)}
-          onSearchFieldChange={setSearchField}
-          onKeywordChange={setKeyword}
-          onFromDateChange={setFromDate}
-          onToDateChange={setToDate}
+          onSearchFieldChange={(value) =>
+            dispatch(setSaleOutSearchField(value))
+          }
+          onKeywordChange={(value) => dispatch(setSaleOutKeyword(value))}
+          onFromDateChange={(value) => dispatch(setSaleOutFromDate(value))}
+          onToDateChange={(value) => dispatch(setSaleOutToDate(value))}
           onSearch={handleSearch}
         />
 
@@ -325,7 +263,7 @@ function SaleOutPage() {
               <Button
                 color="inherit"
                 size="small"
-                onClick={() => loadSaleOuts(appliedSearch)}>
+                onClick={() => dispatch(fetchSaleOuts(appliedSearch))}>
                 Thử lại
               </Button>
             }>
@@ -357,7 +295,7 @@ function SaleOutPage() {
               page={page}
               pageSize={pageSize}
               totalItems={saleOuts.length}
-              onPageChange={setPage}
+              onPageChange={(newPage) => dispatch(setSaleOutPage(newPage))}
               showPageSize={false}
             />
           </>
